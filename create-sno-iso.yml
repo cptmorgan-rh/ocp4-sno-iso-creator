@@ -1,0 +1,16 @@
+---
+- hosts: localhost
+  gather_facts: False
+  tasks:
+    - name: Set the cache of all the download links
+      import_role:
+        name: cache
+
+- hosts: localhost
+  gather_facts: True
+  environment:
+    PATH: "{{ playbook_dir }}/bin:{{ ansible_env.PATH }}"
+  tasks:
+    - name: Run all the common tasks
+      import_role:
+        name: create_iso

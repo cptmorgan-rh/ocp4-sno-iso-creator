@@ -1,0 +1,109 @@
+---
+- name: Install the necessary linux packages which will be needed later in the ansible run
+  package:
+    name:
+      - patch
+      - jq
+  become: true
+
+- name: Clean up existing bin, install-dir and downloads folders
+  file:
+    path: "{{ playbook_dir }}/{{ item }}"
+    state: absent
+  with_items: ["bin", "install-dir", "downloads"]
+  when: clean is defined
+
+- name: Must always clean install-dir
+  file:
+    path: "{{ playbook_dir }}/{{ item }}"
+    state: absent
+  with_items: ["install-dir"]
+  when: clean is not defined
+
+- name: Create bin, install-dir and downloads folders
+  file:
+    path: "{{ playbook_dir }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items: ["bin", "downloads", "install-dir"]
+
+- name: Download butane
+  get_url:
+    url: "{{ download.butane }}"
+    dest: "{{ playbook_dir }}/bin/butane"
+    validate_certs: no
+
+- name: Make butane executable
+  file:
+    path: "{{ playbook_dir }}/bin/butane"
+    mode: '775'
+
+- name: Download the openshift-install binary
+  get_url:
+    url: "{{ download.openshiftInstall }}"
+    dest: "{{ playbook_dir }}/downloads/openshift_install.tar.gz"
+    validate_certs: no
+  register: openshift_install_download
+
+- name: Unarchive openshift-install
+  unarchive:
+    src: "{{ playbook_dir }}/downloads/openshift_install.tar.gz"
+    dest: "{{ playbook_dir }}/bin"
+    mode: '0775'
+  when: openshift_install_download is changed
+
+- name: Download the iso file
+  get_url:
+    url: "{{ download.iso }}"
+    dest: "{{ playbook_dir }}/downloads/rhcos-live.x86_64.iso"
+    validate_certs: no
+
+- name: Download the coreos-installer file
+  get_url:
+    url: "{{ coreos_installer }}"
+    dest: "{{ playbook_dir }}/bin/coreos-installer"
+    validate_certs: no
+
+- name: Make coreos-installer executable
+  file:
+    path: "{{ playbook_dir }}/bin/coreos-installer"
+    mode: '775'
+
+- name: Copy install-config.yaml file into install-dir
+  template:
+    src: "{{ playbook_dir }}/roles/create_iso/templates/install-config.yaml.j2"
+    dest: "{{ playbook_dir }}/install-dir/install-config.yaml"
+    mode: '0664'
+
+- name: Backup the install-config.yaml file
+  copy:
+    src: "{{ playbook_dir }}/install-dir/install-config.yaml"
+    dest: "{{ playbook_dir }}/install-dir/install-config.yaml.orig"
+    mode: '0664'
+  when: (registry is not defined) or (registry.enabled is not defined) or (registry.enabled == false) # noqa 601
+
+- name: Generate nanifest
+  command: "openshift-install create manifests --dir={{ playbook_dir }}/install-dir" # noqa 301
+
+- name: "Create hostname.fcc in {{ playbook_dir }}/install-dir"
+  template:
+    src: templates/01-sno-hostname.j2
+    dest: "{{ playbook_dir }}/install-dir/01-sno-hostname.bu"
+
+- name: Create transpiled ignition file
+  shell: "butane {{ playbook_dir }}/install-dir/01-sno-hostname.bu -o {{ playbook_dir }}/install-dir/openshift/01-master-network.yaml"
+
+- name: Generate the single node ignition
+  command: "openshift-install create single-node-ignition-config --dir={{ playbook_dir }}/install-dir" # noqa 301
+
+- name: Generate ISO with Ignition Embedded
+  command: "coreos-installer iso ignition embed -f -i {{ playbook_dir }}/install-dir/bootstrap-in-place-for-live-iso.ign {{ playbook_dir }}/downloads/rhcos-live.x86_64.iso" # noqa 301
+
+#    - name: Generate Network Manager Keyfile
+#      shell: "/usr/libexec/nm-initrd-generator -s -- ip={{ sno_vm.ipaddr }}::{{ static_ip.gateway }}:255.255.255.0:{{ sno_vm.name }}:{{ static_ip.network_interface_name }}:none:{{ static_ip.dns }} | sed '/^*/d' | sed '/^$/d' > {{ playbook_dir }}/install-dir/{{ static_ip.network_interface_name }}.nmconection"
+
+- name: Embed networking config into ISO
+  shell: "coreos-installer iso kargs modify -a 'console=ttyS0 rd.neednet=1 ip={{ sno_vm.ipaddr }}::{{ static_ip.gateway }}:{{ static_ip.netmask }}:{{ sno_vm.name }}:{{ static_ip.network_interface_name }}:none nameserver={{ static_ip.dns }}' {{ playbook_dir }}/downloads/rhcos-live.x86_64.iso"
+
+#    - name: Embed networking config into ISO
+#      command: "coreos-installer iso network embed -k {{ playbook_dir }}/install-dir/{{ static_ip.network_interface_name }}.nmconection {{ playbook_dir }}/downloads/rhcos-live.x86_64.iso" # noqa 301

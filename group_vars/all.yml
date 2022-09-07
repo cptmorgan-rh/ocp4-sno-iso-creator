@@ -1,0 +1,20 @@
+config:
+  base_domain: lab.int
+  cluster_name: sno
+  cluster_domain: sno.lab.int
+  installer_ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  pull_secret: "{{ lookup('file', '~/.openshift/pull-secret.json') }}"
+  networktype: KubernetesOVN
+download:
+  channel: stable
+  version: 4.11
+  butane: https://github.com/coreos/butane/releases/download/v0.14.0/butane-x86_64-unknown-linux-gnu
+sno_vm:
+  name: singlenode
+  ipaddr: 192.168.0.250
+static_ip:
+  gateway: 192.168.0.1
+  netmask: 255.255.255.0
+  cidr: "24"
+  dns: 192.168.0.1
+  network_interface_name: ens3

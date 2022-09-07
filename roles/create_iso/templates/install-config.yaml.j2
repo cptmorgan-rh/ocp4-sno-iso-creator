@@ -1,0 +1,20 @@
+apiVersion: v1
+baseDomain: {{ config.base_domain }}
+compute:
+- hyperthreading: Enabled
+  name: worker
+  replicas: 0
+controlPlane:
+  hyperthreading: Enabled
+  name: master
+  replicas: 1
+metadata:
+  name: {{ config.cluster_name }}
+networking:
+  networkType: {{ config.networktype }}
+platform:
+  none: {}
+bootstrapInPlace:
+  installationDisk: "--copy-network /dev/sda"
+pullSecret: '{{ config.pull_secret | to_json }}'
+sshKey: '{{ config.installer_ssh_key }}'
